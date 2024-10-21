@@ -91,9 +91,9 @@ Follow these steps to set up Skillsync locally:
 
 Create a .env.local file in the root directory and add your configuration:
 ```sh
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-MONGODB_URI=your_mongodb_uri
+GITHUB_ID=your_github_client_id
+GITHUB_SECRET=your_github_client_secret
+MONGO_URI=your_mongodb_uri
 NEXTAUTH_URL=your_nextauth_secret
 AUTH_SECRET=your-auth-secret
 UPLOADTHING_SECRET=your-uploadthing-secret
