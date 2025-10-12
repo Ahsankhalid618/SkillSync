@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { TrendingUp } from "lucide-react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart } from "recharts";
 
@@ -12,12 +13,12 @@ import {
   CardTitle,
 } from "../../../@/components/ui/card";
 import {
-  ChartConfig,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
+  CustomizedAxisTick,
 } from "../../../@/components/ui/chart";
 import pulse from "../../../public/pulse.png";
 import Image from "next/image";
@@ -45,6 +46,27 @@ const chartConfig = {
 };
 
 export function RadarChartComponent() {
+  const containerRef = React.useRef(null);
+  const [outerRadius, setOuterRadius] = React.useState(100);
+
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+    function update() {
+      const rect = el.getBoundingClientRect();
+  // compute radius as a smaller percentage so radar size remains compact
+  // while labels can be moved outward via tick offset.
+  const smaller = Math.min(rect.width, rect.height);
+  // Use 18% of the smaller dimension with reasonable min/max caps.
+  const radius = Math.max(40, Math.floor(smaller * 0.18));
+      setOuterRadius(radius);
+    }
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [containerRef]);
+
   return (
     <Card className="p-4  bg-[#0C0C0C] rounded-lg border-slate-600 w-full ">
       <CardHeader className="items-center pb-2">
@@ -59,30 +81,44 @@ export function RadarChartComponent() {
       <CardContent>
         <ChartContainer
           config={chartConfig}
-          className="w-full lg:aspect-square max-h-[280px] "
+          // Provide an explicit height so Recharts' ResponsiveContainer can calculate sizes
+          // and allow overflow so labels outside the radar aren't clipped.
+          className="w-full h-[320px] md:h-[360px] lg:h-[380px] overflow-visible"
+          ref={containerRef}
         >
           <RadarChart
             data={chartData}
-            margin={{
-              top: -40,
-              bottom: -10,
-            }}
+            // Give extra margins so labels have room around the chart
+            margin={{ top: 29, right: 29, left: 20, bottom: 29 }}
             className="text-white"
+            outerRadius={outerRadius}
           >
             <ChartTooltip
               cursor={false}
               content={<ChartTooltipContent indicator="line" />}
             />
-            <PolarAngleAxis dataKey="item" />
+            <PolarAngleAxis
+              dataKey="item"
+              // Use our custom tick component to wrap long labels across lines
+              // and provide an outward offset in pixels. We pass a function so
+              // Recharts will call it with props that include cx/cy which we
+              // forward to our component.
+                tick={(props) => <CustomizedAxisTick {...props} offset={18} />}
+              // remove lines for a cleaner look
+              axisLine={false}
+              tickLine={false}
+            />
             <PolarGrid />
             <Radar
               dataKey="hardSkills"
               fill="var(--color-hardSkills)" // Ensure these variables are defined in your CSS
               fillOpacity={0.6}
+              outerRadius={outerRadius}
             />
             <Radar
               dataKey="softSkills"
               fill="var(--color-softSkills)" // Ensure these variables are defined in your CSS
+              outerRadius={outerRadius}
             />
             <ChartLegend className="mt-8" content={<ChartLegendContent />} />
           </RadarChart>

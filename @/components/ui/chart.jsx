@@ -27,12 +27,14 @@ const ChartContainer = React.forwardRef(({ id, className, children, config, ...p
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
 
   return (
-    (<ChartContext.Provider value={{ config }}>
-      <div
+      <ChartContext.Provider value={{ config }}>
+        <div
         data-chart={chartId}
         ref={ref}
         className={cn(
-          "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-none [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-sector]:outline-none [&_.recharts-surface]:outline-none",
+          // Use responsive aspect ratios so radar charts have more vertical room on small screens
+          // and allow overflow visible so labels placed outside the chart area aren't clipped.
+          "flex aspect-[4/5] sm:aspect-[3/4] md:aspect-[4/5] lg:aspect-square justify-center overflow-visible text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-none [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-sector]:outline-none [&_.recharts-surface]:outline-none",
           className
         )}
         {...props}>
@@ -40,41 +42,126 @@ const ChartContainer = React.forwardRef(({ id, className, children, config, ...p
         <RechartsPrimitive.ResponsiveContainer>
           {children}
         </RechartsPrimitive.ResponsiveContainer>
-      </div>
-    </ChartContext.Provider>)
+        </div>
+      </ChartContext.Provider>
   );
 })
 ChartContainer.displayName = "Chart"
 
-const ChartStyle = ({
-  id,
-  config
-}) => {
+const ChartStyle = ({ id, config }) => {
   const colorConfig = Object.entries(config).filter(([_, config]) => config.theme || config.color)
 
-  if (!colorConfig.length) {
-    return null
+  if (!colorConfig.length) return null
+
+  const baseCss = Object.entries(THEMES)
+    .map(([theme, prefix]) => `
+${prefix} [data-chart=${id}] {
+${colorConfig
+      .map(([key, itemConfig]) => {
+        const color = itemConfig.theme?.[theme] || itemConfig.color
+        return color ? `  --color-${key}: ${color};` : null
+      })
+      .join("\n")}
+}
+`)
+    .join("\n")
+
+  const responsiveTickCss = `
+@media (max-width: 640px) {
+  [data-chart=${id}] .recharts-polar-angle-axis-tick_text { font-size: 9px; }
+}
+@media (min-width: 641px) and (max-width: 1024px) {
+  [data-chart=${id}] .recharts-polar-angle-axis-tick_text { font-size: 12px; }
+}
+@media (min-width: 1025px) {
+  [data-chart=${id}] .recharts-polar-angle-axis-tick_text { font-size: 14px; }
+}
+`
+
+  return <style dangerouslySetInnerHTML={{ __html: baseCss + "\n" + responsiveTickCss }} />
+}
+
+// Customized axis tick for polar/radar charts.
+// Splits multi-word labels into multiple <tspan> lines so long labels wrap and don't get clipped.
+function CustomizedAxisTick({ x, y, payload, fill = '#cbd5e1', fontSize = 14, cx, cy, offset = 0 }) {
+  // Compute an outward offset from the chart center (cx, cy) towards the
+  // tick point (x, y). If cx/cy are available (provided by Recharts), move
+  // the label along that radial vector by `offset` pixels.
+  let drawX = x
+  let drawY = y
+  let textAnchor = 'middle'
+  let dominantBaseline = 'central'
+
+  const value = payload?.value ?? ''
+  const text = String(value)
+  const words = text.trim().split(/\s+/)
+
+  if (!text) return null
+
+  // If we have a center (cx, cy) and an offset, move the label outward.
+  if (typeof cx === 'number' && typeof cy === 'number' && offset) {
+    const dx = x - cx
+    const dy = y - cy
+    const len = Math.sqrt(dx * dx + dy * dy)
+    if (len > 0) {
+      const nx = dx / len
+      const ny = dy / len
+      drawX = x + nx * offset
+      drawY = y + ny * offset
+
+      // Choose appropriate text anchor based on horizontal direction
+      if (Math.abs(nx) < 0.35) {
+        textAnchor = 'middle'
+      } else if (nx > 0) {
+        textAnchor = 'start'
+      } else {
+        textAnchor = 'end'
+      }
+
+      // Vertical alignment: nudge baseline so multi-line wraps look natural
+      if (ny > 0.5) {
+        dominantBaseline = 'hanging'
+      } else if (ny < -0.5) {
+        dominantBaseline = 'baseline'
+      } else {
+        dominantBaseline = 'central'
+      }
+    }
+  }
+
+  if (words.length <= 1) {
+    return (
+      <text
+        className="recharts-polar-angle-axis-tick_text"
+        x={drawX}
+        y={drawY}
+        fill={fill}
+        fontSize={fontSize}
+        textAnchor={textAnchor}
+        dominantBaseline={dominantBaseline}
+      >
+        {text}
+      </text>
+    )
   }
 
   return (
-    (<style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-.map(([key, itemConfig]) => {
-const color =
-  itemConfig.theme?.[theme] ||
-  itemConfig.color
-return color ? `  --color-${key}: ${color};` : null
-})
-.join("\n")}
-}
-`)
-          .join("\n"),
-      }} />)
-  );
+    <text
+      className="recharts-polar-angle-axis-tick_text"
+      x={drawX}
+      y={drawY}
+      fill={fill}
+      fontSize={fontSize}
+      textAnchor={textAnchor}
+      dominantBaseline={dominantBaseline}
+    >
+      {words.map((w, i) => (
+        <tspan key={i} x={drawX} dy={i === 0 ? '0' : '1.4em'}>
+          {w}
+        </tspan>
+      ))}
+    </text>
+  )
 }
 
 const ChartTooltip = RechartsPrimitive.Tooltip
@@ -306,4 +393,5 @@ export {
   ChartLegend,
   ChartLegendContent,
   ChartStyle,
+  CustomizedAxisTick,
 }
